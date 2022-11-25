@@ -5,6 +5,11 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace networking {
+	/// <summary>
+	/// keep track of filled data as separate from allocated data
+	/// handle my own memory for networking buffers
+	/// build my own convenience functions for network data and buffering
+	/// </summary>
 	public class NetBuffer {
 		/// <summary>
 		/// byte buffer for receiving and sending data
@@ -16,17 +21,22 @@ namespace networking {
 		private int _filled;
 		
 		public byte[] Buffer => _buffer;
-		public int Count => _filled;
+		public int Count { get => _filled; set => _filled = value; }
+		public int Capacity { get => _buffer.Length; set => Resize(value); }
 		public byte this[int i] { get { return _buffer[i]; } set { _buffer[i] = value; } }
 		
-		public NetBuffer() { _buffer = new byte[0]; _filled = 0; }
-		
+		public NetBuffer() : this (new byte[0], 0) { }
+
+		/// <summary>
+		/// assumes the entire given buffer is filled with data
+		/// </summary>
+		/// <param name="buffer"></param>
+		public NetBuffer(byte[] buffer) : this(buffer, buffer.Length) { }
+
 		public NetBuffer(byte[] buffer, int filled) { _buffer = buffer; _filled = filled; }
-		
-		public static NetBuffer Utf8(string value) {
-			byte[] bytes = Encoding.UTF8.GetBytes(value);
-			return new NetBuffer(bytes, bytes.Length);
-		}
+
+		public static NetBuffer FromString(string message) => Utf8(message);
+		public static NetBuffer Utf8(string value) => new NetBuffer(Encoding.UTF8.GetBytes(value));
 		
 		public void AddUtf8(List<char> value) => Add(Encoding.UTF8.GetBytes(value.ToArray()));
 		
@@ -34,27 +44,38 @@ namespace networking {
 		
 		public void Add(byte[] bytes) => Add(bytes, bytes.Length);
 
+		public void Add(NetBuffer otherBuffer) => Add(otherBuffer.Buffer, otherBuffer.Count);
+
 		public void Add(byte[] bytes, int count) {
 			if (_buffer.Length < _filled + count) {
-				Array.Resize(ref _buffer, _filled + count);
+				Resize(_filled + count);
 			}
 			Array.Copy(bytes, 0, _buffer, _filled, count);
 			_filled += count;
 		}
 
-		public void Clear() { _filled = 0; }
-
-		public async Task WriteFlush(List<TcpClient> clients) {
-			if (Count == 0) { return; }
-			Console.WriteLine($"writing {Count} bytes: " + System.Text.Encoding.UTF8.GetString(Buffer, 0, Count));
-			for (int i = clients.Count - 1; i >= 0; --i) {
-				if (Program.IsClearedDeadStream(clients[i], i, clients)) { continue; }
-				await WriteFlush(clients[i]);
-			}
-			Clear();
+		public void Resize(int newSize) {
+			Array.Resize(ref _buffer, newSize);
 		}
 
-		public async Task WriteFlush(TcpClient c) {
+		public void Clear() { _filled = 0; }
+
+		public string ToUtf8() {
+			return Encoding.UTF8.GetString(_buffer, 0, _filled);
+		}
+
+		public static bool IsClearedDeadStream(TcpClient c, int i, List<TcpClient> clients) {
+			if (c == null || !c.Connected) {
+				Console.WriteLine($"removing client {i} {c == null}");
+				if (clients != null) {
+					clients.RemoveAt(i);
+				}
+				return true;
+			}
+			return false;
+		}
+
+		public async Task WriteFlushStream(TcpClient c) {
 			NetworkStream ns = c.GetStream();
 			await ns.WriteAsync(Buffer, 0, Count);
 			ns.Flush();
@@ -64,15 +85,17 @@ namespace networking {
 		/// 
 		/// </summary>
 		/// <param name="client"></param>
-		/// <param name="totalBuffer"></param>
 		/// <param name="intermediateBuffer">where bytes being read directly from the socket go</param>
+		/// <param name="onIntermediateReceived">callback whenever data is put into the given intermediate buffer</param>
 		/// <returns></returns>
-		public async Task Read(TcpClient client, byte[] intermediateBuffer) {
+		public async Task Read(TcpClient client, NetBuffer intermediateBuffer, Action<NetBuffer> onIntermediateReceived) {
 			NetworkStream ns = client.GetStream();
 			while (ns.DataAvailable) {
-				int received = await ns.ReadAsync(intermediateBuffer);
+				int received = await ns.ReadAsync(intermediateBuffer.Buffer);
+				intermediateBuffer.Count = received;
 				if (received <= 0) { return; }
-				Add(intermediateBuffer, received);
+				onIntermediateReceived?.Invoke(intermediateBuffer);
+				Add(intermediateBuffer.Buffer, received);
 			}
 		}
 	}

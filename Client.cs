@@ -9,9 +9,10 @@ namespace networking {
 		public NetworkStream stream;
 		public ValueTask<int> readTask;
 		public Task writeTask;
-		public byte[] networkInputBuffer = new byte[1024];
-		Action<int, byte[]> onReceived;
-		Func<byte[]> getDataToWrite;
+		//public byte[] networkInputBuffer = new byte[1024];
+		public NetBuffer networkInputBuffer;
+		Action<NetBuffer> onReceived;
+		Func<NetBuffer> getDataToWrite;
 		private bool receivedDataLastUpdate = false;
 
 		public Client() {
@@ -21,10 +22,11 @@ namespace networking {
 		public async Task ConnectAsync(IPEndPoint ipEndPoint) {
 			await client.ConnectAsync(ipEndPoint.Address, ipEndPoint.Port);
 			stream = client.GetStream();
-			readTask = stream.ReadAsync(networkInputBuffer);
+			networkInputBuffer = new NetBuffer(new byte[1024], 0);
+			readTask = stream.ReadAsync(networkInputBuffer.Buffer);
 		}
 
-		public async Task Work(IPEndPoint ipEndPoint, Action<int, byte[]> onReceived, Func<byte[]> getDataToWrite) {
+		public async Task Work(IPEndPoint ipEndPoint, Action<NetBuffer> onReceived, Func<NetBuffer> getDataToWrite) {
 			this.onReceived = onReceived;
 			this.getDataToWrite = getDataToWrite;
 			await ConnectAsync(ipEndPoint);
@@ -36,9 +38,9 @@ namespace networking {
 
 		private void KeepWriting() {
 			if (writeTask != null && !writeTask.IsCompleted) { return; }
-			byte[] data = getDataToWrite();
+			NetBuffer data = getDataToWrite();
 			if (data != null) {
-				writeTask = stream.WriteAsync(data, 0, data.Length);
+				writeTask = stream.WriteAsync(data.Buffer, 0, data.Count);
 				stream.Flush();
 			}
 		}
@@ -47,12 +49,14 @@ namespace networking {
 			if (stream.CanRead && readTask.IsCompleted) {
 				int received = readTask.Result;
 				if (received <= 0) { return false; }
-				onReceived.Invoke(received, networkInputBuffer);
+				networkInputBuffer.Count = received;
+				onReceived.Invoke(networkInputBuffer);
 				receivedDataLastUpdate = true;
-				readTask = stream.ReadAsync(networkInputBuffer);
+				readTask = stream.ReadAsync(networkInputBuffer.Buffer);
 			} else if (receivedDataLastUpdate) {
 				receivedDataLastUpdate = false;
-				onReceived.Invoke(0, networkInputBuffer);
+				networkInputBuffer.Count = 0;
+				onReceived.Invoke(networkInputBuffer);
 			}
 			return true;
 		}
