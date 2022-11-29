@@ -9,58 +9,18 @@ namespace networking {
 
 	public class Server {
 		public TcpListener listener;
-		public Dictionary<long,Client> clients;
+		public Dictionary<long, ClientHandler> clients;
 		/// <summary>
 		/// clients discovered to be disconnected, will be purged by <see cref="PurgeDeadClients"/>
 		/// </summary>
-		private HashSet<Client> _deadClients;
+		private HashSet<ClientHandler> _deadClients;
 		private List<Message> _messageQueue;
-		public NetBuffer _echoToAllBuffer;
-		public NetBuffer individualClientReadBuffer;
+		private NetBuffer _broadcastBuffer;
+		private NetBuffer individualClientReadBuffer;
 		public bool running, success;
 		private long nextClientId;
 
-		public struct Client {
-			public TcpClient tcp;
-			private long _id;
-			public long id => _id;
-			public bool IsAlive => tcp != null && tcp.Connected;
-			public Client(TcpClient tcp, long id) {
-				this.tcp = tcp;
-				_id = id;
-			}
-		}
-
-		public enum WhatToDoWithMessage {
-			Nothing, SendToAll, SendToAllExceptSender, SendToSpecificClients, EchoToSender
-		}
-
-		public struct Message {
-			public NetBuffer message;
-			public long sender;
-			public HashSet<long> targets;
-			public WhatToDoWithMessage whatToDo;
-
-			public async Task Send(Server server) {
-				switch (whatToDo) {
-					case WhatToDoWithMessage.EchoToSender:
-						await message.WriteFlushStream(server.clients[sender].tcp);
-						break;
-					case WhatToDoWithMessage.SendToAll:
-						server._echoToAllBuffer.Add(message);
-						break;
-					case WhatToDoWithMessage.SendToSpecificClients:
-						foreach(long id in targets) {
-							if (!server.clients.TryGetValue(id, out Client c) || server.IsDeadCheck(c)) {
-								await NetBuffer.FromString($"ERROR: client {id} failed").WriteFlushStream(server.clients[sender].tcp);
-								break;
-							}
-							await message.WriteFlushStream(c.tcp);
-						}
-						break;
-				}
-			}
-		}
+		public NetBuffer BroadcastBuffer => _broadcastBuffer;
 
 		public static bool IsPortAvailable(int port) {
 			// same info as from netstat command line tool
@@ -72,26 +32,31 @@ namespace networking {
 			return true;
 		}
 
+		private void Init() {
+			nextClientId = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
+			clients = new Dictionary<long, ClientHandler>();
+			_broadcastBuffer = new NetBuffer();
+			individualClientReadBuffer = new NetBuffer(new byte[1024], 0);
+			_deadClients = new HashSet<ClientHandler>();
+			_messageQueue = new List<Message>();
+			running = true;
+			success = false;
+		}
+
 		/// <summary>
 		/// 
 		/// </summary>
 		/// <param name="ipEndPoint"><code>IPEndPoint ipEndPoint = await GetEndPoint(localhost, port);</code></param>
 		/// <returns>true on success, false on failure</returns>
 		public async Task<bool> Work(IPEndPoint ipEndPoint, Func<TcpClient, Task<bool>> onClientConnect,
-		Action<Client, NetBuffer> onReceived, Func<bool> update) {
+		Action<ClientHandler, NetBuffer> onReceived, Func<bool> update) {
 			listener = new TcpListener(ipEndPoint);
 			try {
 				listener.Start();
 			} catch {
 				return false; // will fail if a listener socket is already bound to the port
 			}
-			nextClientId = DateTime.UtcNow.Ticks / TimeSpan.TicksPerMillisecond;
-			clients = new Dictionary<long, Client>();
-			_echoToAllBuffer = new NetBuffer();
-			individualClientReadBuffer = new NetBuffer(new byte[1024], 0);
-			_deadClients = new HashSet<Client>();
-			running = true;
-			success = false;
+			Init();
 			try {
 				Console.WriteLine("listening at " + ipEndPoint);
 				while (running) {
@@ -107,7 +72,7 @@ namespace networking {
 						clientValid = await onClientConnect?.Invoke(clientHandler);
 					}
 					if (clientValid) {
-						clients[nextClientId] = new Client(clientHandler, nextClientId);
+						clients[nextClientId] = new ClientHandler(clientHandler, nextClientId);
 						++nextClientId;
 					}
 				}
@@ -121,29 +86,35 @@ namespace networking {
 			return success;
 		}
 
-		private async Task<TcpClient> ServiceClientsWhileListening(Action<Client, NetBuffer> onReceived, Func<bool> update) {
+		private async Task<TcpClient> ServiceClientsWhileListening(Action<ClientHandler, NetBuffer> onReceived, Func<bool> update) {
 			Task<TcpClient> tcpClientTask = listener.AcceptTcpClientAsync();
 			while (!tcpClientTask.IsCompleted) {
 				if (update != null && !update.Invoke()) { return null; }
-				//await echoToAllBuffer.Read(clients, individualClientReadBuffer, onReceived);
 				await Read(onReceived);
+				await WriteMessages();
 				await Broadcast();
 			}
 			return tcpClientTask.Result;
 		}
 
-		public async Task Read(Action<Client, NetBuffer> onReceived) {
-			Client c;
-			foreach(KeyValuePair<long, Client> kvp in clients) {
+		public async Task Read(Action<ClientHandler, NetBuffer> onReceived) {
+			ClientHandler c;
+			foreach(KeyValuePair<long, ClientHandler> kvp in clients) {
 				c = kvp.Value;
 				if (IsDeadCheck(c)) { continue; }
-				await _echoToAllBuffer.Read(c.tcp, individualClientReadBuffer, OnReceived);
+				await _broadcastBuffer.Read(c.tcp, individualClientReadBuffer, OnReceived);
 			}
 			void OnReceived(NetBuffer buffer) => onReceived?.Invoke(c, buffer);
 			PurgeDeadClients();
 		}
 
-		public bool IsDeadCheck(Client c) {
+		private async Task WriteMessages() {
+			foreach(var message in _messageQueue) {
+				await message.Send(this);
+			}
+		}
+
+		public bool IsDeadCheck(ClientHandler c) {
 			if (!c.IsAlive) {
 				_deadClients.Add(c);
 				return true;
@@ -153,27 +124,27 @@ namespace networking {
 
 		private void PurgeDeadClients() {
 			if (_deadClients.Count == 0) { return; }
-			foreach (Client c in _deadClients) {
+			foreach (ClientHandler c in _deadClients) {
 				clients.Remove(c.id);
 			}
 			_deadClients.Clear();
 		}
 
 		public async Task Broadcast() {
-			if (_echoToAllBuffer.Count == 0) { return; }
-			Console.WriteLine($"broadcasting {_echoToAllBuffer.Count}b: \"{_echoToAllBuffer.ToUtf8()}\"");
-			foreach (KeyValuePair<long, Client> kvp in clients) {
-				Client c = kvp.Value;
+			if (_broadcastBuffer.Count == 0) { return; }
+			Console.WriteLine($"broadcasting {_broadcastBuffer.Count}b: \"{_broadcastBuffer.ToUtf8()}\"");
+			foreach (KeyValuePair<long, ClientHandler> kvp in clients) {
+				ClientHandler c = kvp.Value;
 				if (IsDeadCheck(c)) { continue; }
 				try {
-					await _echoToAllBuffer.WriteFlushStream(c.tcp);
+					await _broadcastBuffer.WriteFlushStream(c.tcp);
 				} catch {
 					Console.WriteLine($"{c.id} failed, but was not considered a dead stream yet...");
 					_deadClients.Add(c);
 				}
 			}
 			PurgeDeadClients();
-			_echoToAllBuffer.Clear();
+			_broadcastBuffer.Clear();
 		}
 	}
 }

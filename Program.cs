@@ -56,6 +56,7 @@ namespace networking {
 				await client.Work(ipEndPoint, ClientRead, ClientUpdateWrite);
 			} catch (Exception e) {
 				Console.WriteLine(e);
+				Console.ReadKey();
 			}
 			void ClientRead(NetBuffer buffer) {
 				if (buffer.Count == 0) {
@@ -111,7 +112,8 @@ namespace networking {
 				Console.WriteLine($"Sent message: \"{message}\"");
 				return true;
 			}
-			void HandleReceived(Server.Client client, NetBuffer buffer) {
+			void HandleReceived(ClientHandler client, NetBuffer buffer) {
+				// TODO create protocol for enqueuing different kinds of message (with different Message.Purpose)
 			}
 			bool HandleServerKeyPresses() {
 				int now = Environment.TickCount;

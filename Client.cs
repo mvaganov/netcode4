@@ -14,6 +14,7 @@ namespace networking {
 		Action<NetBuffer> onReceived;
 		Func<NetBuffer> getDataToWrite;
 		private bool receivedDataLastUpdate = false;
+		private long bytesSent, bytesRead;
 
 		public Client() {
 			client = new TcpClient();
@@ -34,12 +35,17 @@ namespace networking {
 				KeepWriting();
 				KeepReading();
 			}
+			Console.WriteLine("server connection is closed");
+			if (bytesRead > 0) {
+				Console.ReadKey();
+			}
 		}
 
 		private void KeepWriting() {
 			if (writeTask != null && !writeTask.IsCompleted) { return; }
 			NetBuffer data = getDataToWrite();
 			if (data != null) {
+				bytesSent += data.Count;
 				writeTask = stream.WriteAsync(data.Buffer, 0, data.Count);
 				stream.Flush();
 			}
@@ -47,18 +53,27 @@ namespace networking {
 
 		private bool KeepReading() {
 			if (stream.CanRead && readTask.IsCompleted) {
-				int received = readTask.Result;
+				int received = !readTask.IsFaulted ? readTask.Result : -1;
 				if (received <= 0) { return false; }
-				networkInputBuffer.Count = received;
-				onReceived.Invoke(networkInputBuffer);
 				receivedDataLastUpdate = true;
+				CallbackBufferReadPartial(received);
 				readTask = stream.ReadAsync(networkInputBuffer.Buffer);
 			} else if (receivedDataLastUpdate) {
 				receivedDataLastUpdate = false;
-				networkInputBuffer.Count = 0;
-				onReceived.Invoke(networkInputBuffer);
+				CallbackBufferReadProbablyFinished();
 			}
 			return true;
+		}
+	
+		private void CallbackBufferReadPartial(int received) {
+			networkInputBuffer.Count = received;
+			bytesRead += networkInputBuffer.Count;
+			onReceived.Invoke(networkInputBuffer);
+		}
+		
+		private void CallbackBufferReadProbablyFinished() {
+			networkInputBuffer.Count = 0;
+			onReceived.Invoke(networkInputBuffer);
 		}
 	}
 }
