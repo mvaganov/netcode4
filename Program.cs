@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -33,11 +29,11 @@ namespace networking {
 		public async Task Run() {
 			bool isServer = false;
 			if (Server.IsPortAvailable(port)) {
-				isServer = await CommandLineServer.CreateCommandLineEchoServer(port);
+				isServer = await CommandLineServer.Create(port);
 			}
 			if (!isServer) {
 				Console.WriteLine($"connecting client to {host}:{port}");
-				await CommandLineClient.Create(host, port);
+				await CommandLineClient.CreateAsync(host, port);
 			}
 		}
 	}

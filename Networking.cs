@@ -15,7 +15,5 @@ namespace networking {
 			IPHostEntry ipHostInfo = await Dns.GetHostEntryAsync(host);
 			return ipHostInfo.AddressList[0];
 		}
-
-
 	}
 }

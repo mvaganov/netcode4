@@ -29,10 +29,11 @@ namespace networking {
 		}
 
 		// TODO onConnect, onDisconnect
-		public async Task Work(IPEndPoint ipEndPoint, Action<NetBuffer> onReceived, Func<NetBuffer> getDataToWrite) {
+		public async Task Work(IPEndPoint ipEndPoint, Action<TcpClient> onConnect, Action<NetBuffer> onReceived, Func<NetBuffer> getDataToWrite) {
 			this.onReceived = onReceived;
 			this.getDataToWrite = getDataToWrite;
 			await ConnectAsync(ipEndPoint);
+			onConnect?.Invoke(client);
 			while (client.Connected) {
 				KeepWriting();
 				KeepReading();
