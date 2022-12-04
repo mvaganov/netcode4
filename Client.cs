@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace networking {
@@ -27,6 +28,7 @@ namespace networking {
 			readTask = stream.ReadAsync(networkInputBuffer.Buffer);
 		}
 
+		// TODO onConnect, onDisconnect
 		public async Task Work(IPEndPoint ipEndPoint, Action<NetBuffer> onReceived, Func<NetBuffer> getDataToWrite) {
 			this.onReceived = onReceived;
 			this.getDataToWrite = getDataToWrite;
@@ -45,8 +47,8 @@ namespace networking {
 			if (writeTask != null && !writeTask.IsCompleted) { return; }
 			NetBuffer data = getDataToWrite();
 			if (data != null) {
-				bytesSent += data.Count;
 				writeTask = stream.WriteAsync(data.Buffer, 0, data.Count);
+				bytesSent += data.Count;
 				stream.Flush();
 			}
 		}
@@ -67,7 +69,7 @@ namespace networking {
 	
 		private void CallbackBufferReadPartial(int received) {
 			networkInputBuffer.Count = received;
-			bytesRead += networkInputBuffer.Count;
+			bytesRead += received;
 			onReceived.Invoke(networkInputBuffer);
 		}
 		
