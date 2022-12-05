@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MrV;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -12,25 +13,32 @@ namespace networking {
 		private Dictionary<ConsoleKey, Action> keyBind = new Dictionary<ConsoleKey, Action>();
 		private string currentPrompt;
 		private bool enabled = true;
+		private bool inputCoordKnown = false;
+		private Coord inputCoord;
 
 		public bool Enabled { get => enabled; set => enabled = value; }
 		public Func<string> Prompt { get => prompt; set => prompt = value; }
-
-		public CommandLineInput(Func<string> prompt) { this.prompt = prompt; }
+		public int CursorIndex => consoleInput.Count;
+		public CommandLineInput(Func<string> prompt) : this(prompt, "/-\\|", 200) { }
 
 		public CommandLineInput(Func<string> prompt, string animation, int animationFrameMs) {
 			this.prompt = prompt; this.animation = animation; this.animationFrameMs = animationFrameMs;
+			BindKey(ConsoleKey.Backspace, DoBackspaceKey);
 		}
 
 		public void BindKey(ConsoleKey key, Action action) { keyBind[key] = action; }
-		public void UpdateAsciiAnimation() {
+		public void UpdatePrompt() {
 			if (!Enabled) { return; }
+			if (!inputCoordKnown) {
+				inputCoord = Coord.GetCursorPosition();
+			}
 			if (consoleInput.Count == 0 && Environment.TickCount >= whenToAnimateNext) {
 				whenToAnimateNext += animationFrameMs;
 				if (consoleInput.Count == 0) {
-					currentPrompt = prompt?.Invoke() + animation[animationIndex++] + "\r";
-					Console.Write(currentPrompt);
+					animationIndex++;
 					if (animationIndex >= animation.Length) { animationIndex = 0; }
+					currentPrompt = prompt?.Invoke() + animation[animationIndex] + "\r";
+					Console.Write(currentPrompt);
 				}
 			}
 		}
@@ -43,12 +51,7 @@ namespace networking {
 		public bool UpdateKeyInput() {
 			if (!Enabled || !Console.KeyAvailable) { return false; }
 			if (consoleInput.Count == 0) {
-				string clearPrompt = "";
-				for (int i = 0; i < currentPrompt.Length; ++i) {
-					clearPrompt += " ";
-				}
-				clearPrompt += "\r";
-				Console.Write(clearPrompt);
+				ConsoleClearPrompt();
 			}
 			ConsoleKeyInfo keyInfo = Console.ReadKey();
 			if (keyBind.TryGetValue(keyInfo.Key, out Action action)) {
@@ -60,6 +63,23 @@ namespace networking {
 			}
 			return true;
 		}
-	}
+		public void DoBackspaceKey() {
+			if (CursorIndex > 0) {
+				consoleInput.RemoveAt(CursorIndex - 1);
+				Coord p = Coord.GetCursorPosition();
+				Console.Write(" ");
+				p.SetCursorPosition();
+			} else {
+				inputCoord.SetCursorPosition();
+			}
+		}
 
+		public void ConsoleClearPrompt() {
+			string clearPrompt = "";
+			for (int i = 0; i < currentPrompt.Length; ++i) { clearPrompt += " "; }
+			clearPrompt += "\r";
+			Console.Write(clearPrompt);
+
+		}
+	}
 }

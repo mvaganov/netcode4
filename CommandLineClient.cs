@@ -57,7 +57,7 @@ namespace networking {
 
 		private void ClientConnected(TcpClient tcp) {
 			string ipString = tcp.Client.LocalEndPoint.ToString();
-			cmdInput.Prompt = () => ipString;
+			cmdInput.Prompt = () => $"client {ipString}";
 		}
 
 		private void ClientRead(NetBuffer buffer) {
@@ -72,7 +72,7 @@ namespace networking {
 
 		private NetBuffer ClientUpdateWrite() {
 			if (!Input.Enabled) { return null; }
-			cmdInput.UpdateAsciiAnimation();
+			cmdInput.UpdatePrompt();
 			cmdInput.UpdateKeyInput();
 			NetBuffer result = null;
 			if (toSend != null) {

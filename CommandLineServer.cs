@@ -22,7 +22,7 @@ namespace networking {
 			server = new Server();
 			ipEndPoint = await Networking.GetEndPoint(Networking.localhost, port);
 			string promptString = ipEndPoint.ToString();
-			cmdInput = new CommandLineInput(()=> $"{promptString}({server.clients.Count})", ">}|{<{|}", 100);
+			cmdInput = new CommandLineInput(()=> $"server {promptString}({server.clients.Count})", ">}|{<{|}", 100);
 			running = true;
 			cmdInput.BindKey(ConsoleKey.Escape, EndServer);
 			cmdInput.BindKey(ConsoleKey.Tab, NextCommandLineContext);
@@ -39,12 +39,17 @@ namespace networking {
 		}
 
 		private void NextCommandLineContext() {
+			ICommandLineContext clc = currentCommandLineContext < commandLineContexts.Count ? commandLineContexts[currentCommandLineContext] : null;
+			if (clc != null) {
+				clc.Input.ConsoleClearPrompt();
+			}
 			++currentCommandLineContext;
 			if (currentCommandLineContext >= commandLineContexts.Count) {
 				currentCommandLineContext = 0;
 			}
 			for (int i = 0; i < commandLineContexts.Count; ++i) {
-				commandLineContexts[i].Input.Enabled = i == currentCommandLineContext;
+				bool enableThisOne = i == currentCommandLineContext;
+				commandLineContexts[i].Input.Enabled = enableThisOne;
 			}
 		}
 
@@ -60,7 +65,9 @@ namespace networking {
 					//	tab will swap between server and client CommandInput
 					//	show wich one has command input at the animating prompt
 					CommandLineClient clc = CommandLineClient.Create(Networking.localhost, port, false);
+					clc.Input.BindKey(ConsoleKey.Tab, NextCommandLineContext);
 					localClients.Add(clc);
+					commandLineContexts.Add(clc);
 					break;
 			}
 		}
@@ -87,13 +94,22 @@ namespace networking {
 			for(int i = localClients.Count-1; i >= 0; --i) {
 				Task t = localClients[i].Execution;
 				if (t != null && !t.IsCompleted) {
-					t.RunSynchronously();
+					//t.RunSynchronously();
+					// allow the task some time to execute
 				} else {
 					localClients.RemoveAt(i);
 				}
 			}
-			cmdInput.UpdateAsciiAnimation();
-			cmdInput.UpdateKeyInput();
+			//cmdInput.UpdateAsciiAnimation();
+			//cmdInput.UpdateKeyInput();
+			for(int i = 0; i < commandLineContexts.Count; ++i) {
+				ICommandLineContext clc = commandLineContexts[i];
+				if (clc != null && clc.Input.Enabled) {
+					Console.Write(clc.Input.Prompt()+"\r");
+					clc.Input.UpdatePrompt();
+					clc.Input.UpdateKeyInput();
+				}
+			}
 			return running;
 		}
 
