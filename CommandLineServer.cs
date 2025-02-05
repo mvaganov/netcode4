@@ -15,14 +15,16 @@ namespace networking {
 		private List<ICommandLineContext> commandLineContexts;
 		private int currentCommandLineContext;
 		private int port;
-		public CommandLineInput Input => cmdInput;
 
+		public CommandLineInput Input => cmdInput;
+		public string Name { get => GetName(); set => throw new NotImplementedException(); }
+
+		public string GetName() { return $"server {ipEndPoint.ToString()}({server.clients.Count})"; }
 		public async Task Start(int port) {
 			this.port = port;
 			server = new Server();
 			ipEndPoint = await Networking.GetEndPoint(Networking.localhost, port);
-			string promptString = ipEndPoint.ToString();
-			cmdInput = new CommandLineInput(()=> $"server {promptString}({server.clients.Count})", ">}|{<{|}", 100);
+			cmdInput = new CommandLineInput(GetName, ">}|{<{|}", 100);
 			running = true;
 			cmdInput.BindKey(ConsoleKey.Escape, EndServer);
 			cmdInput.BindKey(ConsoleKey.Tab, NextCommandLineContext);
@@ -100,16 +102,31 @@ namespace networking {
 					localClients.RemoveAt(i);
 				}
 			}
-			//cmdInput.UpdateAsciiAnimation();
-			//cmdInput.UpdateKeyInput();
-			for(int i = 0; i < commandLineContexts.Count; ++i) {
-				ICommandLineContext clc = commandLineContexts[i];
-				if (clc != null && clc.Input.Enabled) {
-					Console.Write(clc.Input.Prompt()+"\r");
-					clc.Input.UpdatePrompt();
-					clc.Input.UpdateKeyInput();
-				}
-			}
+			cmdInput.UpdatePrompt();
+			cmdInput.UpdateKeyInput();
+			//Coord oldPos = Coord.GetCursorPosition();
+			//Coord.Zero.SetCursorPosition();
+			//for(int i = 0; i < commandLineContexts.Count; ++i) {
+			//	ICommandLineContext clc = commandLineContexts[i];
+			//	ConsoleColor color = Console.ForegroundColor;
+			//	if (clc.Input.Enabled) {
+			//		Console.ForegroundColor = ConsoleColor.Green;
+			//	} else {
+			//		Console.ForegroundColor = ConsoleColor.DarkGray;
+			//	}
+			//	Console.Write($"{clc.Name} ");
+			//	Console.ForegroundColor = color;
+			//}
+			//Console.Write("                    \r");
+			//oldPos.SetCursorPosition();
+			//for(int i = 0; i < commandLineContexts.Count; ++i) {
+			//	ICommandLineContext clc = commandLineContexts[i];
+			//	if (clc != null && clc.Input.Enabled) {
+			//		Console.Write(clc.Input.Prompt()+"\r");
+			//		clc.Input.UpdatePrompt();
+			//		clc.Input.UpdateKeyInput();
+			//	}
+			//}
 			return running;
 		}
 

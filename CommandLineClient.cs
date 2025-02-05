@@ -14,15 +14,19 @@ namespace networking {
 		private string host;
 		private int port;
 		private Task execution;
+		private string _name;
 
 		public Task Execution => execution;
 		public CommandLineInput Input => cmdInput;
 
+		public string Name { get => GetName(); set => _name = value; }
+
+		public string GetName() => _name;
 		public CommandLineClient(string host, int port, bool handleCommandLine) {
 			this.host = host;
 			this.port = port;
-			string clientIpString = $"connect {host}:{port} ...";
-			cmdInput = new CommandLineInput(() => clientIpString);
+			_name = $"connect {host}:{port} ...";
+			cmdInput = new CommandLineInput(GetName);
 			cmdInput.Enabled = handleCommandLine;
 		}
 
@@ -57,7 +61,7 @@ namespace networking {
 
 		private void ClientConnected(TcpClient tcp) {
 			string ipString = tcp.Client.LocalEndPoint.ToString();
-			cmdInput.Prompt = () => $"client {ipString}";
+			_name = $"client {ipString}";
 		}
 
 		private void ClientRead(NetBuffer buffer) {

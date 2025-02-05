@@ -32,7 +32,7 @@ namespace networking {
 			if (!inputCoordKnown) {
 				inputCoord = Coord.GetCursorPosition();
 			}
-			if (consoleInput.Count == 0 && Environment.TickCount >= whenToAnimateNext) {
+			if (animation.Length > 0 && consoleInput.Count == 0 && Environment.TickCount >= whenToAnimateNext) {
 				whenToAnimateNext += animationFrameMs;
 				if (consoleInput.Count == 0) {
 					animationIndex++;
@@ -53,6 +53,10 @@ namespace networking {
 			if (consoleInput.Count == 0) {
 				ConsoleClearPrompt();
 			}
+			//Coord c = Coord.GetCursorPosition();
+			//Coord.Down.SetCursorPosition();
+			//Console.Write(prompt()+" "+Environment.TickCount+" \""+new string(consoleInput.ToArray())+"\"");
+			//c.SetCursorPosition();
 			ConsoleKeyInfo keyInfo = Console.ReadKey();
 			if (keyBind.TryGetValue(keyInfo.Key, out Action action)) {
 				action.Invoke();
@@ -79,7 +83,6 @@ namespace networking {
 			for (int i = 0; i < currentPrompt.Length; ++i) { clearPrompt += " "; }
 			clearPrompt += "\r";
 			Console.Write(clearPrompt);
-
 		}
 	}
 }
