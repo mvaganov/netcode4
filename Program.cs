@@ -9,7 +9,7 @@ namespace networking {
 		public int port;
 		public string host;
 		public string password;
-		public static void Main(string[] args) {
+		public static void Main0(string[] args) {
 			Program p = RunNewProgram(Networking.localhost, defaultPort);
 			// not allowed to await in Main, so we have to add a manual blocking sleep.
 			while (!p.task.IsCompleted) { Thread.Sleep(1); }
