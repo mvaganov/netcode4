@@ -26,9 +26,7 @@ namespace networkingMinimal {
 			IPGlobalProperties ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
 			IPEndPoint[] tcpConnInfoArray = ipGlobalProperties.GetActiveTcpListeners();
 			foreach (IPEndPoint endpoint in tcpConnInfoArray) {
-				if (endpoint.Port == port) {
-					return true;
-				}
+				if (endpoint.Port == port) { return true; }
 			}
 			return false;
 		}
@@ -87,9 +85,7 @@ namespace networkingMinimal {
 		Func<bool> IsRunning, Func<Task> Update) {
 			Task<TcpClient> tcpClientTask = listener.AcceptTcpClientAsync();
 			while (!tcpClientTask.IsCompleted) {
-				if (!IsRunning.Invoke()) {
-					return null;
-				}
+				if (!IsRunning.Invoke()) { return null; }
 				await Update?.Invoke();
 			}
 			return tcpClientTask.Result;
@@ -98,14 +94,10 @@ namespace networkingMinimal {
 		Func<bool> isRunning, Func<Task> update) {
 			try {
 				IPEndPoint ipEndPoint = await GetEndPoint(host, port);
-				if (ipEndPoint == null) {
-					throw new Exception($"unable to find {host}:{port}");
-				}
+				if (ipEndPoint == null) { throw new Exception($"unable to find {host}:{port}"); }
 				TcpClient client = new TcpClient();
 				await client.ConnectAsync(ipEndPoint.Address, ipEndPoint.Port);
-				if (!client.Connected) {
-					throw new Exception($"unable to connect to {host}:{port}");
-				}
+				if (!client.Connected) { throw new Exception($"unable to connect to {host}:{port}"); }
 				await onConnect?.Invoke(client);
 				while (isRunning.Invoke()) {
 					await update.Invoke();
