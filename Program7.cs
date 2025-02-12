@@ -12,7 +12,7 @@ namespace networkingMinimal {
 		public const string localhost = "localhost";
 		public const int defaultPort = 8765;
 
-		public static void Main(string[] args) {
+		public static void Main_(string[] args) {
 			Program p = new Program();
 			int port = defaultPort;
 			string host = localhost;
