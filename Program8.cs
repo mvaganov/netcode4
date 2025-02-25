@@ -30,7 +30,10 @@ namespace ChatProgram {
             Console.WriteLine("Received: " + Encoding.ASCII.GetString(inputBuffer, 0, receivedBytes));
             if (pretendTobeHttpServer) {
               string content = "HELLO <b>WORLD</b>!";
-              string response200 = $"HTTP/1.1 200 OK\r\nDate: {httpTimestamp}\r\nServer: Apache/2.4.4 (Win32) OpenSSL/0.9.8y PHP/5.4.16\r\nLast-Modified: Sat, 30 Mar 2013 11:28:59 GMT\r\nETag: \"ca-4d922b19fd4c0\"\r\nAccept-Ranges: bytes\r\nContent-Length: {content.Length}\r\nKeep-Alive: timeout=5, max=100\r\nConnection: Keep-Alive\r\nContent-Type: text/html\r\n\r\n" +
+              string server = "Apache/2.4.4 (Win32) OpenSSL/0.9.8y PHP/5.4.16";
+              string serverTimestamp = "Sat, 30 Mar 2013 11:28:59 GMT";
+              string dataFingerprint = "\"ca-4d922b19fd4c0\"";
+              string response200 = $"HTTP/1.1 200 OK\r\nDate: {httpTimestamp}\r\nServer: {server}\r\nLast-Modified: {serverTimestamp}\r\nETag: {dataFingerprint}\r\nAccept-Ranges: bytes\r\nContent-Length: {content.Length}\r\nKeep-Alive: timeout=5, max=100\r\nConnection: Keep-Alive\r\nContent-Type: text/html\r\n\r\n" +
               content;
               Byte[] ecode200 = Encoding.ASCII.GetBytes(response200);
               clientStream.Write(ecode200, 0, ecode200.Length);
