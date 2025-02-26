@@ -7,11 +7,16 @@ using System.Threading.Tasks;
 namespace ChatProgram {
   internal class Program {
 
-    public static void Main(string[] args) {
+    public static string GetHttpTimeStampString(DateTime dateTime) {
+      const string httpHeaderTimestampFormatUTC = "ddd, dd MMM yyyy HH:mm:ss";
+      return dateTime.ToString(httpHeaderTimestampFormatUTC) + " GMT";
+    }
+
+    public static void Main_(string[] args) {
       IPEndPoint endpoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 8080);
       Console.WriteLine("Have endpoint: " + endpoint);
-      string httpTimestamp = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss ") + "GMT";
-      Console.WriteLine(httpTimestamp);
+      string timestampServerStart = GetHttpTimeStampString(DateTime.UtcNow);
+      Console.WriteLine(timestampServerStart);
 
       char input = (char)Console.Read();
       if (input == 's') {
@@ -29,15 +34,27 @@ namespace ChatProgram {
             int receivedBytes = clientStream.Read(inputBuffer, 0, inputBuffer.Length);
             Console.WriteLine("Received: " + Encoding.ASCII.GetString(inputBuffer, 0, receivedBytes));
             if (pretendTobeHttpServer) {
+              string serverPlatform = "Apache/2.4.4 (Win32) OpenSSL/0.9.8y PHP/5.4.16";
+              string timestampNow = GetHttpTimeStampString(DateTime.UtcNow);
               string content = "HELLO <b>WORLD</b>!";
-              string server = "Apache/2.4.4 (Win32) OpenSSL/0.9.8y PHP/5.4.16";
-              string serverTimestamp = "Sat, 30 Mar 2013 11:28:59 GMT";
-              string dataFingerprint = "\"ca-4d922b19fd4c0\"";
-              string response200 = $"HTTP/1.1 200 OK\r\nDate: {httpTimestamp}\r\nServer: {server}\r\nLast-Modified: {serverTimestamp}\r\nETag: {dataFingerprint}\r\nAccept-Ranges: bytes\r\nContent-Length: {content.Length}\r\nKeep-Alive: timeout=5, max=100\r\nConnection: Keep-Alive\r\nContent-Type: text/html\r\n\r\n" +
-              content;
+              string[] httpHeader = {
+                "HTTP/1.1 200 OK",
+                $"Date: {timestampNow}",
+                $"Server: {serverPlatform}",
+                $"Last-Modified: {timestampServerStart}",
+                $"ETag: \"{timestampNow.GetHashCode().ToString("x")}\"",
+                "Accept-Ranges: bytes",
+                $"Content-Length: {content.Length}",
+                "Keep-Alive: timeout=5, max=100",
+                "Connection: Keep-Alive",
+                "Content-Type: text/html",
+              };
+              string lineEnd = "\r\n";
+              string response200 = string.Join(lineEnd, httpHeader) + lineEnd + lineEnd + content;
               Byte[] ecode200 = Encoding.ASCII.GetBytes(response200);
               clientStream.Write(ecode200, 0, ecode200.Length);
               clientStream.Flush();
+              Console.WriteLine($"wrote: {response200}");
             }
           }
           if (Console.KeyAvailable) {
