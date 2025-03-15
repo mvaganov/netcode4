@@ -1,26 +1,108 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace networkingMinimal {
 	public class Program {
-		public const string localhost = "localhost";
-		public const int defaultPort = 8765;
+		public const string localhost = "127.0.0.1";
+		public const int defaultPort = 11434;
 
-		public static void Main_(string[] args) {
-			Program p = new Program();
-			int port = defaultPort;
-			string host = localhost;
-			bool canBeServer = !IsPortUsed(port);
-			Task t = p.Run(host, port, canBeServer);
-			// main loop. not allowed to await in Main, so we do a blocking sleep.
-			while (!t.IsCompleted) { Thread.Sleep(1); }
+		static async Task Main() {
+			using HttpClient client = new HttpClient();
+			string url = "http://localhost:11434/api/generate";
+			string prompt = "Hello, how are you?";
+
+			var requestData = new {
+				model = "deepseek-r1:7b",
+				prompt = prompt
+			};
+
+			string jsonData = JsonSerializer.Serialize(requestData);
+			var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
+
+			var request = new HttpRequestMessage(HttpMethod.Post, url) {
+				Content = content
+			};
+			string contentFromObject = "";
+			//if (request.Content.Headers.ContentMD5 != null) {
+			//	contentFromObject = Encoding.UTF8.GetString(request.Content.Headers.ContentMD5);
+			//} else {
+			//	contentFromObject = content.;
+			//}
+
+			//if (request.Content.Headers.TryGetValues("Content", out IEnumerable<string> values)) {
+			//	contentFromObject = string.Join("\n", values);
+			//} else {
+			//	Console.WriteLine("NOPE!");
+			//	//contentFromObject = request.Content.Headers.;
+			//}
+
+			Console.WriteLine("connecting...\n"+contentFromObject);
+			foreach (var header in request.Headers) {
+				Console.WriteLine($"({header.Key}): \"{string.Join(", ", header.Value)}\"");
+			}
+			foreach (var header in request.Content.Headers) {
+				Console.WriteLine($"[{header.Key}]: \"{string.Join(", ", header.Value)}\"");
+			}
+			foreach (var kvp in request.Properties) {
+				Console.WriteLine($"{kvp.Key} : \"{kvp.Value}\"");
+			}
+			// Print body content
+			if (request.Content != null) {
+				string requestBody = await request.Content.ReadAsStringAsync();
+				Console.WriteLine("\n===== BODY =====");
+				Console.WriteLine(requestBody);
+			}
+			int iteration = 0;
+			// Use SendAsync instead of PostAsync, ensuring we start reading as soon as possible
+			Task< HttpResponseMessage> responseTask = client.SendAsync(request, HttpCompletionOption.ResponseContentRead);
+			while (!responseTask.IsCompleted) {
+				Console.WriteLine("0: "+iteration + " " + responseTask.Result.Content.ToString().Length);
+				iteration++;
+			}
+			using HttpResponseMessage response = responseTask.Result; //await client.SendAsync(request, HttpCompletionOption.ResponseContentRead);
+			Task<Stream> responseStreamTask = response.Content.ReadAsStreamAsync();
+			while (!responseStreamTask.IsCompleted) {
+				Console.WriteLine("1: " + iteration + " "+responseStreamTask.Result.Length);
+				iteration++;
+			}
+			//using Stream responseStream = await response.Content.ReadAsStreamAsync();
+			using Stream responseStream = responseStreamTask.Result;
+			using StreamReader reader = new StreamReader(responseStream);
+
+			Console.WriteLine("Ollama Response:");
+
+			while (!reader.EndOfStream) {
+				string line = await reader.ReadLineAsync();
+				if (!string.IsNullOrWhiteSpace(line)) {
+					Console.Write(line); // Print in real-time
+				}
+			}
+
+			Console.WriteLine("\nResponse complete.");
 		}
+		
+		// TODO send the HTTP request raw and stream the response
+		//public static void Main(string[] args) {
+		//	string thisFile = new System.Diagnostics.StackTrace(true).GetFrame(0).GetFileName();
+		//	Console.WriteLine($"running main from \"{thisFile}\"");
+		//	Program p = new Program();
+		//	int port = defaultPort;
+		//	string host = localhost;
+		//	bool canBeServer = !IsPortUsed(port);
+		//	Console.WriteLine("starting " + (canBeServer ? "server" : "client"));
+		//	Task t = p.Run(host, port, canBeServer);
+		//	// main loop. not allowed to await in Main, so we do a blocking sleep.
+		//	while (!t.IsCompleted) { Thread.Sleep(1); }
+		//}
 
 		private static bool IsPortUsed(int port) {
 			IPGlobalProperties ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
@@ -93,17 +175,21 @@ namespace networkingMinimal {
 		public static async Task ClientProcess(string host, int port, Func<TcpClient, Task> onConnect, 
 		Func<bool> isRunning, Func<Task> update) {
 			try {
+				Console.WriteLine($"client {host}:{port}");
 				IPEndPoint ipEndPoint = await GetEndPoint(host, port);
 				if (ipEndPoint == null) { throw new Exception($"unable to find {host}:{port}"); }
 				TcpClient client = new TcpClient();
 				await client.ConnectAsync(ipEndPoint.Address, ipEndPoint.Port);
 				if (!client.Connected) { throw new Exception($"unable to connect to {host}:{port}"); }
+				Console.WriteLine($"client connected! {host}:{port}");
 				await onConnect?.Invoke(client);
 				while (isRunning.Invoke()) {
 					await update.Invoke();
 				}
 			} catch (Exception e) {
-				Console.Error.WriteLine(e);
+				Console.ForegroundColor = ConsoleColor.Red;
+				Console.WriteLine(e);
+				Console.ResetColor();
 			}
 			Console.WriteLine("done with client!");
 		}

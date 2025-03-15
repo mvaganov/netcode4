@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace MrV {
   class WebserverTest {
-    public static void Main(string[] args) {
+    public static void Main_(string[] args) {
       IPEndPoint endpoint = new IPEndPoint(IPAddress.Parse("127.0.0.1"), 8080);
       string timestampServerStart = GetHttpTimeStampString(DateTime.UtcNow);
       TcpListener listener = new TcpListener(endpoint);
