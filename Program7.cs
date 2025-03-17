@@ -1,4 +1,6 @@
-﻿using System;
+﻿using networking;
+using Newtonsoft.Json;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -6,103 +8,48 @@ using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
+using System.Text.Unicode;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace networkingMinimal {
 	public class Program {
-		public const string localhost = "127.0.0.1";
+		public const string localhost = "localhost";
 		public const int defaultPort = 11434;
+		public const string requestPath = "/api/generate";
 
-		static async Task Main() {
-			using HttpClient client = new HttpClient();
-			string url = "http://localhost:11434/api/generate";
-			string prompt = "Hello, how are you?";
-
-			var requestData = new {
-				model = "deepseek-r1:7b",
-				prompt = prompt
-			};
-
-			string jsonData = JsonSerializer.Serialize(requestData);
-			var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
-
-			var request = new HttpRequestMessage(HttpMethod.Post, url) {
-				Content = content
-			};
-			string contentFromObject = "";
-			//if (request.Content.Headers.ContentMD5 != null) {
-			//	contentFromObject = Encoding.UTF8.GetString(request.Content.Headers.ContentMD5);
-			//} else {
-			//	contentFromObject = content.;
-			//}
-
-			//if (request.Content.Headers.TryGetValues("Content", out IEnumerable<string> values)) {
-			//	contentFromObject = string.Join("\n", values);
-			//} else {
-			//	Console.WriteLine("NOPE!");
-			//	//contentFromObject = request.Content.Headers.;
-			//}
-
-			Console.WriteLine("connecting...\n"+contentFromObject);
-			foreach (var header in request.Headers) {
-				Console.WriteLine($"({header.Key}): \"{string.Join(", ", header.Value)}\"");
-			}
-			foreach (var header in request.Content.Headers) {
-				Console.WriteLine($"[{header.Key}]: \"{string.Join(", ", header.Value)}\"");
-			}
-			foreach (var kvp in request.Properties) {
-				Console.WriteLine($"{kvp.Key} : \"{kvp.Value}\"");
-			}
-			// Print body content
-			if (request.Content != null) {
-				string requestBody = await request.Content.ReadAsStringAsync();
-				Console.WriteLine("\n===== BODY =====");
-				Console.WriteLine(requestBody);
-			}
-			int iteration = 0;
-			// Use SendAsync instead of PostAsync, ensuring we start reading as soon as possible
-			Task< HttpResponseMessage> responseTask = client.SendAsync(request, HttpCompletionOption.ResponseContentRead);
-			while (!responseTask.IsCompleted) {
-				Console.WriteLine("0: "+iteration + " " + responseTask.Result.Content.ToString().Length);
-				iteration++;
-			}
-			using HttpResponseMessage response = responseTask.Result; //await client.SendAsync(request, HttpCompletionOption.ResponseContentRead);
-			Task<Stream> responseStreamTask = response.Content.ReadAsStreamAsync();
-			while (!responseStreamTask.IsCompleted) {
-				Console.WriteLine("1: " + iteration + " "+responseStreamTask.Result.Length);
-				iteration++;
-			}
-			//using Stream responseStream = await response.Content.ReadAsStreamAsync();
-			using Stream responseStream = responseStreamTask.Result;
-			using StreamReader reader = new StreamReader(responseStream);
-
-			Console.WriteLine("Ollama Response:");
-
-			while (!reader.EndOfStream) {
-				string line = await reader.ReadLineAsync();
-				if (!string.IsNullOrWhiteSpace(line)) {
-					Console.Write(line); // Print in real-time
-				}
-			}
-
-			Console.WriteLine("\nResponse complete.");
-		}
-		
-		// TODO send the HTTP request raw and stream the response
-		//public static void Main(string[] args) {
-		//	string thisFile = new System.Diagnostics.StackTrace(true).GetFrame(0).GetFileName();
-		//	Console.WriteLine($"running main from \"{thisFile}\"");
-		//	Program p = new Program();
-		//	int port = defaultPort;
-		//	string host = localhost;
-		//	bool canBeServer = !IsPortUsed(port);
-		//	Console.WriteLine("starting " + (canBeServer ? "server" : "client"));
-		//	Task t = p.Run(host, port, canBeServer);
-		//	// main loop. not allowed to await in Main, so we do a blocking sleep.
-		//	while (!t.IsCompleted) { Thread.Sleep(1); }
+		//class OllamaResponse {
+		//	public string model;
+		//	public string created_at;
+		//	public string response;
+		//	public bool done;
+		//	public string done_reason;
+		//	public int[] context;
+		//	public long total_duration;
+		//	public long load_duration;
+		//	public int prompt_eval_count;
+		//	public long prompt_eval_duration;
+		//	public int eval_count;
+		//	public long eval_duration;
 		//}
+
+		public static void Main(string[] args) {
+			string thisFile = new System.Diagnostics.StackTrace(true).GetFrame(0).GetFileName();
+			Console.WriteLine($"running main from \"{thisFile}\"");
+			Program p = new Program();
+			int port = defaultPort;
+			string host = localhost;
+			bool canBeServer = !IsPortUsed(port);
+			Console.WriteLine("starting " + (canBeServer ? "server" : "client"));
+			Task t = p.Run(host, port, canBeServer);
+			// main loop. not allowed to await in Main, so we do a blocking sleep.
+			while (!t.IsCompleted) { Thread.Sleep(1); }
+		}
 
 		private static bool IsPortUsed(int port) {
 			IPGlobalProperties ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
@@ -127,8 +74,11 @@ namespace networkingMinimal {
 				ServerImplementation server = new ServerImplementation();
 				await ServerProcess(port, server.OnConnect, server.IsGood, server.Update);
 			} else {
-				ClientImplementation client = new ClientImplementation();
-				await ClientProcess(host, port, client.OnConnect, client.IsGood, client.Update);
+				await OllamaClientHttpClient();
+				//await OllamaClientRawSocket();
+
+				//ClientImplementation client = new ClientImplementation();
+				//await ClientProcess(host, port, client.OnConnect, client.IsGood, client.Update);
 			}
 		}
 
@@ -206,10 +156,14 @@ namespace networkingMinimal {
 				Console.WriteLine("connected to new client " + newClient.Client.RemoteEndPoint);
 				clients.Add(newClient);
 				// example serialization. TODO make this in a delegate, with the corresponding delegate for reading.
-				var message = $"DateTime: {DateTime.Now}";
-				var dateTimeBytes = Encoding.UTF8.GetBytes(message);
-				await stream.WriteAsync(dateTimeBytes);
-				Console.WriteLine($"Sent message: \"{message}\"");
+				//var message = $"DateTime: {DateTime.Now}";
+				//var dateTimeBytes = Encoding.UTF8.GetBytes(message);
+				//await stream.WriteAsync(dateTimeBytes);
+				//Console.WriteLine($"Sent message: \"");
+				//Console.ForegroundColor = ConsoleColor.Cyan;
+				//Console.WriteLine(message);
+				//Console.ResetColor();
+				//Console.WriteLine("\"");
 			}
 
 			public bool IsGood() {
@@ -243,8 +197,12 @@ namespace networkingMinimal {
 			}
 			public async Task SendWriteBufferToClients() {
 				if (writeBuffer.Count == 0) { return; }
-				Console.WriteLine($"writing {writeBuffer.Count} bytes: " +
-					Encoding.UTF8.GetString(writeBuffer.Buffer, 0, writeBuffer.Count));
+				Console.WriteLine($"writing {writeBuffer.Count} bytes: ");
+				Console.ForegroundColor = ConsoleColor.Cyan;
+				string output = Encoding.UTF8.GetString(writeBuffer.Buffer, 0, writeBuffer.Count);
+				output = Regex.Escape(output);
+				Console.WriteLine(output);
+				Console.ResetColor();
 				for (int i = clients.Count - 1; i >= 0; --i) {
 					TcpClient client = clients[i];
 					if (ClearedDeadStreams(client, i)) { continue; }
@@ -368,6 +326,152 @@ namespace networkingMinimal {
 					if (received <= 0) { return; }
 					Add(_networkReadBuffer, received);
 				}
+			}
+		}
+		static string PostQuestion(string content) {
+			string request =
+				"POST /api/generate HTTP/1.1\r\n" +
+				"Host: localhost\r\n" +
+				"Content-Type: application/json; charset=utf-8\r\n" +
+				$"Content-Length: {Encoding.UTF8.GetByteCount(content)}\r\n" +
+				"Connection: close\r\n" +
+				"\r\n" + content;
+			return request;
+		}
+
+		static async Task OllamaClientHttpClient() {
+			using HttpClient client = new HttpClient();
+			string url = $"http://localhost:{defaultPort}{requestPath}";
+			Console.Write($"connecting to {url}");
+			string prompt = "Hello, how are you?";
+			var requestData = new {
+				model = "deepseek-r1:7b",
+				prompt = prompt
+			};
+
+			string jsonData = System.Text.Json.JsonSerializer.Serialize(requestData);
+			var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
+
+			var request = new HttpRequestMessage(HttpMethod.Post, url) {
+				Content = content
+			};
+			string contentFromObject = "";
+			if (request.Content != null) {
+				contentFromObject = await request.Content.ReadAsStringAsync();
+			}
+
+			Console.WriteLine("connecting...\n" + contentFromObject);
+			foreach (var header in request.Headers) {
+				Console.WriteLine($"({header.Key}): \"{string.Join(", ", header.Value)}\"");
+			}
+			foreach (var header in request.Content.Headers) {
+				Console.WriteLine($"[{header.Key}]: \"{string.Join(", ", header.Value)}\"");
+			}
+			foreach (var kvp in request.Properties) {
+				Console.WriteLine($"{kvp.Key} : \"{kvp.Value}\"");
+			}
+
+			int iteration = 0;
+			// Use SendAsync instead of PostAsync, ensuring we start reading as soon as possible
+			Task<HttpResponseMessage> responseTask = client.SendAsync(request, HttpCompletionOption.ResponseContentRead);
+			while (!responseTask.IsCompleted) {
+				Console.WriteLine("0: " + iteration + " " + responseTask.Result.Content.ToString().Length);
+				iteration++;
+			}
+			using HttpResponseMessage response = responseTask.Result; //await client.SendAsync(request, HttpCompletionOption.ResponseContentRead);
+			Task<Stream> responseStreamTask = response.Content.ReadAsStreamAsync();
+			while (!responseStreamTask.IsCompleted) {
+				Console.WriteLine("1: " + iteration + " " + responseStreamTask.Result.Length);
+				iteration++;
+			}
+			//using Stream responseStream = await response.Content.ReadAsStreamAsync();
+			using Stream responseStream = responseStreamTask.Result;
+			using StreamReader reader = new StreamReader(responseStream);
+
+			Console.WriteLine("Ollama Response:");
+
+			StringBuilder allDataBuffer = new StringBuilder();
+			while (!reader.EndOfStream) {
+				string line = await reader.ReadLineAsync();
+				if (!string.IsNullOrWhiteSpace(line)) {
+					Console.Write(line); // Print in real-time
+					allDataBuffer.Append(line);
+				}
+			}
+
+			Console.WriteLine("\nResponse complete.");
+
+			//for(int i = 0; i < )
+			string dataToParse = "[" + allDataBuffer.ToString().Replace("}{", "},\n{") + "]";
+			Console.WriteLine(dataToParse);
+			//OllamaResponse[] deserialized = JsonSerializer.Deserialize<OllamaResponse[]>(allData.ToString());
+			//Console.WriteLine(deserialized.ToString());
+			//Dictionary<string, object> dict = JsonConvert.DeserializeObject<Dictionary<string, object>>(fixedData); // requires find+instal newtonsoft
+			//Console.WriteLine(dict);
+			object obj = JsonConvert.DeserializeObject<object>(dataToParse); // requires find+instal newtonsoft
+			//Console.WriteLine(obj);
+			Console.WriteLine(obj.GetType());
+			//Newtonsoft.Json.Linq.JArray array
+			Console.ReadLine();
+		}
+
+		static async Task OllamaClientRawSocket() {
+			NetworkStream stream = null;
+			TcpClient client = null;
+			List<char> consoleInput = new List<char>();
+			ValueTask<int>? receivedTask = null;
+			byte[] networkInputBuffer = new byte[1024]; // TODO use NetBuffer instead
+
+			await ClientProcess(localhost, defaultPort, OnConnect, () => true, UpdateOllamaClient);
+			
+			async Task OnConnect(TcpClient connectedClient) {
+				client = connectedClient;
+				Console.WriteLine("connected.");
+				stream = client.GetStream();
+				receivedTask = stream.ReadAsync(networkInputBuffer);
+				string message = PostQuestion("{\"model\":\"deepseek-r1:7b\",\"prompt\":\"Hello, how are you?\"}");
+				byte[] bytes = Encoding.UTF8.GetBytes(message);
+				stream.Write(bytes, 0, bytes.Length);
+			}
+
+			async Task UpdateOllamaClient() {
+				if (Console.KeyAvailable) {
+					ConsoleKeyInfo keyInfo = Console.ReadKey();
+					switch (keyInfo.Key) {
+						case ConsoleKey.Enter: await FinishConsoleInput(); break;
+						case ConsoleKey.Escape: client.Close(); break;
+						default: AddConsoleInput(keyInfo.KeyChar); break;
+					}
+				}
+				if (stream.CanRead && receivedTask.Value.IsCompleted) {
+					int received = receivedTask.Value.Result;
+					if (received <= 0) {
+						Console.Error.WriteLine($"{received} bytes received");
+						return;
+					}
+					string message = Encoding.UTF8.GetString(networkInputBuffer, 0, received);
+					Console.WriteLine(message);
+					receivedTask = stream.ReadAsync(networkInputBuffer);
+				}
+			}
+
+			async Task FinishConsoleInput() {
+				if (!stream.CanWrite) {
+					Console.WriteLine($"can't write '{string.Join("' '", consoleInput)}'");
+				} else if (consoleInput.Count > 0) {
+					byte[] outbytes = new byte[consoleInput.Count];
+					for (int i = 0; i < consoleInput.Count; ++i) {
+						outbytes[i] = (byte)consoleInput[i];
+					}
+					await stream.WriteAsync(outbytes);
+					stream.Flush();
+				}
+				consoleInput.Clear();
+			}
+
+			void AddConsoleInput(char keyChar) {
+				if (keyChar == 0) { return; }
+				consoleInput.Add(keyChar);
 			}
 		}
 	}
