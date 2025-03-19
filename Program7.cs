@@ -401,7 +401,20 @@ namespace networkingMinimal {
 
 			Console.WriteLine("\nResponse complete.");
 
-			//for(int i = 0; i < )
+			string allData = allDataBuffer.ToString();
+			int start = -1, end = -1;
+			for (int i = 0; i < allData.Length; ++i) {
+				char c = allData[i];
+				switch (c) {
+					case '{':
+						if (start < 0) {
+							start = i; break;
+						} else {
+							throw new Exception("");
+						}
+						break;
+				}
+			}
 			string dataToParse = "[" + allDataBuffer.ToString().Replace("}{", "},\n{") + "]";
 			Console.WriteLine(dataToParse);
 			//OllamaResponse[] deserialized = JsonSerializer.Deserialize<OllamaResponse[]>(allData.ToString());
